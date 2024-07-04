@@ -52,6 +52,18 @@
 	.endm
 
 /*
+ * Save/disable and restore interrupts.
+ */
+	.macro	save_and_disable_irqs, olddaif
+	mrs	\olddaif, daif
+	disable_irq
+	.endm
+
+	.macro	restore_irqs, olddaif
+	msr	daif, \olddaif
+	.endm
+
+/*
  * Enable and disable debug exceptions.
  */
 	.macro	disable_dbg
@@ -374,20 +386,32 @@ alternative_endif
  * 	size:		size of the region
  * 	Corrupts:	kaddr, size, tmp1, tmp2
  */
+	.macro __dcache_op_workaround_clean_cache, op, kaddr
+alternative_if_not ARM64_WORKAROUND_CLEAN_CACHE
+	dc	\op, \kaddr
+alternative_else
+	dc	civac, \kaddr
+alternative_endif
+	.endm
+
 	.macro dcache_by_line_op op, domain, kaddr, size, tmp1, tmp2
 	dcache_line_size \tmp1, \tmp2
 	add	\size, \kaddr, \size
 	sub	\tmp2, \tmp1, #1
 	bic	\kaddr, \kaddr, \tmp2
 9998:
-	.if	(\op == cvau || \op == cvac)
-alternative_if_not ARM64_WORKAROUND_CLEAN_CACHE
-	dc	\op, \kaddr
-alternative_else
-	dc	civac, \kaddr
-alternative_endif
+	.ifc	\op, cvau
+	__dcache_op_workaround_clean_cache \op, \kaddr
+	.else
+	.ifc	\op, cvac
+	__dcache_op_workaround_clean_cache \op, \kaddr
+	.else
+	.ifc	\op, cvap
+	sys	3, c7, c12, 1, \kaddr	// dc cvap
 	.else
 	dc	\op, \kaddr
+	.endif
+	.endif
 	.endif
 	add	\kaddr, \kaddr, \tmp1
 	cmp	\kaddr, \size
@@ -474,10 +498,6 @@ alternative_endif
 	mrs	\rd, sp_el0
 	.endm
 
-	.macro	pte_to_phys, phys, pte
-	and	\phys, \pte, #(((1 << (48 - PAGE_SHIFT)) - 1) << PAGE_SHIFT)
-	.endm
-
 /*
  * Check the MIDR_EL1 of the current CPU for a given model and a range of
  * variant/revision. See asm/cputype.h for the macros used below.
@@ -515,6 +535,10 @@ alternative_endif
 	and		\res, \res, \tmp2
 	.endif
 .Ldone\@:
+	.endm
+
+	.macro	pte_to_phys, phys, pte
+	and	\phys, \pte, #(((1 << (48 - PAGE_SHIFT)) - 1) << PAGE_SHIFT)
 	.endm
 
 	.macro __mitigate_spectre_bhb_loop      tmp
