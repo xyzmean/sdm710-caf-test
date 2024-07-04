@@ -743,7 +743,11 @@ struct sk_buff {
 	__u8			ipvs_property:1;
 
 	__u8			inner_protocol_type:1;
+	__u8			fast_forwarded:1;
 	__u8			remcsum_offload:1;
+
+	 /*4 or 6 bit hole */
+
 #ifdef CONFIG_NET_SWITCHDEV
 	__u8			offload_fwd_mark:1;
 #endif
@@ -1223,6 +1227,11 @@ static inline struct skb_shared_hwtstamps *skb_hwtstamps(struct sk_buff *skb)
 {
 	return &skb_shinfo(skb)->hwtstamps;
 }
+
+/* Iterate through singly-linked GSO fragments of an skb. */
+#define skb_list_walk_safe(first, skb, next_skb)                               \
+	for ((skb) = (first), (next_skb) = (skb) ? (skb)->next : NULL; (skb);  \
+	     (skb) = (next_skb), (next_skb) = (skb) ? (skb)->next : NULL)
 
 /**
  *	skb_queue_empty - check if a queue is empty
